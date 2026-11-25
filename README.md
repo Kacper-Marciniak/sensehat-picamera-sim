@@ -16,6 +16,8 @@ The simulator provides:
 This is a learning tool, not a complete or hardware-accurate replacement for
 the Raspberry Pi libraries.
 
+![GUI example](.readme/gui-example.png "GUI example")
+
 ## What you need
 
 - Python 3.10 or later.
