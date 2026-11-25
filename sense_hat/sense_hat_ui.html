@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sense HAT simulator</title>
+<style>
+:root {
+  --bg: #0f1216; --card: #171b21; --line: #2a313b; --text: #e7eaee; --muted: #8d97a6;
+  --accent: #e0245e; --ok: #3ccf91; --warn: #f0b429; --field: #0c0f13;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f2f4f7; --card: #ffffff; --line: #d9dee5; --text: #1b2027; --muted: #5d6877; --field: #eef1f5; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+header h1 { font-size: 17px; margin: 0; flex: 1; }
+.badge { padding: 2px 10px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+.badge.live { color: var(--ok); border-color: var(--ok); }
+button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+main { display: grid; gap: 16px; padding: 16px 20px 40px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card h3 { font-size: 12px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+.meta { color: var(--muted); font-size: 12px; margin-top: 8px; min-height: 17px; }
+canvas { display: block; }
+#led { width: 100%; max-width: 420px; aspect-ratio: 1; margin: 0 auto; }
+
+.row { display: grid; grid-template-columns: 96px 1fr 72px 40px; gap: 8px; align-items: center; margin: 5px 0; }
+.row label { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .unit { color: var(--muted); font-size: 12px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+input[type=range]:disabled, input[type=number]:disabled { opacity: .5; }
+input[type=number] { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; }
+input[type=color] { width: 44px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.check { display: flex; gap: 8px; align-items: center; margin: 8px 0; color: var(--muted); }
+
+.chips { display: flex; gap: 6px; }
+.chip { font-size: 11px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); text-transform: none; letter-spacing: 0; }
+.chip.on { color: var(--ok); border-color: var(--ok); }
+
+.pad { display: grid; grid-template-columns: repeat(3, 56px); grid-template-rows: repeat(3, 56px); gap: 6px; justify-content: center; margin: 4px 0 10px; }
+.pad button { font-size: 18px; padding: 0; touch-action: none; user-select: none; }
+.pad button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#log { list-style: none; margin: 0; padding: 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); max-height: 190px; overflow: auto; }
+#log b { color: var(--text); font-weight: 600; }
+
+.stage { perspective: 800px; height: 250px; display: grid; place-items: center; overflow: hidden; }
+.tilt { transform-style: preserve-3d; transform: rotateX(52deg); }
+.board {
+  --pitch: 0; --roll: 0; --yaw: 0;
+  width: 190px; height: 190px; position: relative; transform-style: preserve-3d;
+  transform: rotateZ(calc(var(--yaw) * -1deg)) rotateX(calc(var(--pitch) * 1deg)) rotateY(calc(var(--roll) * 1deg));
+  background: #1d6b3b; border: 2px solid #2f9a58; border-radius: 10px; box-shadow: 0 18px 30px rgba(0,0,0,.45);
+  transition: transform .08s linear;
+}
+.board canvas { position: absolute; left: 50%; top: 46%; width: 112px; height: 112px; transform: translate(-50%, -50%); }
+.board .usb { position: absolute; bottom: -2px; left: 18px; width: 54px; height: 14px; background: #b7bcc4; border-radius: 3px 3px 0 0; }
+.board .north { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #bdf0d0; letter-spacing: .1em; }
+.board .stick { position: absolute; right: 14px; bottom: 14px; width: 16px; height: 16px; border-radius: 50%; background: #222; border: 2px solid #777; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.presets button { padding: 3px 10px; font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; }
+td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+td:first-child { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding-right: 10px; white-space: nowrap; }
+td:last-child { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+tr:last-child td { border-bottom: 0; }
+.swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; vertical-align: -3px; margin-right: 6px; border: 1px solid var(--line); }
+#toast { position: fixed; right: 16px; bottom: 16px; background: var(--accent); color: #fff; padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 340px; }
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sense HAT simulator</h1>
+  <span id="conn" class="badge">connecting&hellip;</span>
+  <button id="reset" title="Restore all simulated inputs to their defaults">Reset simulation</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>LED matrix</h2>
+    <canvas id="led" aria-label="8 by 8 LED matrix"></canvas>
+    <div class="meta" id="ledmeta"></div>
+  </section>
+
+  <section class="card">
+    <h2>Board <span class="chips" id="imu"></span></h2>
+    <div class="stage"><div class="tilt"><div class="board" id="board">
+      <div class="north">N</div><canvas id="mini"></canvas><div class="usb"></div><div class="stick"></div>
+    </div></div></div>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section class="card">
+    <h2>Joystick</h2>
+    <div class="pad" id="pad"></div>
+    <div class="meta">Mouse, touch or keyboard (arrow keys + Enter) when no slider has focus.</div>
+    <h3>Events seen by your code</h3>
+    <ul id="log"></ul>
+  </section>
+
+  <section class="card"><h2>Environment</h2><div id="env"></div></section>
+
+  <section class="card">
+    <h2>Motion</h2>
+    <label class="check"><input type="checkbox" id="link"> Derive accelerometer &amp; compass from orientation</label>
+    <div id="orient"></div>
+    <h3>Accelerometer</h3><div id="accel"></div>
+    <h3>Gyroscope</h3><div id="gyro"></div>
+    <h3>Compass</h3><div id="compass"></div>
+  </section>
+
+  <section class="card">
+    <h2>Light (colour sensor)</h2>
+    <div class="row"><label>Colour</label><input type="color" id="lcolour" value="#ffffff"><span></span><span></span></div>
+    <div class="row"><label>Intensity</label><input type="range" id="lint" min="0" max="100" step="0.5" value="35"><output id="lval">128</output><span class="unit">cnt</span></div>
+    <div class="meta" id="lmeta"></div>
+  </section>
+
+  <section class="card">
+    <h2>What your code reads</h2>
+    <table id="readouts"></table>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+const $ = (sel, root = document) => root.querySelector(sel);
+
+function h(tag, attrs = {}, ...kids) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  node.append(...kids);
+  return node;
+}
+
+/* ---------- helpers ---------- */
+let toastTimer = null;
+function toast(message) {
+  const box = $("#toast");
+  box.textContent = message;
+  box.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => box.classList.remove("show"), 2500);
+}
+
+async function post(url, body) {
+  try {
+    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!response.ok) {
+      const info = await response.json().catch(() => ({}));
+      toast(info.error || response.statusText);
+    }
+  } catch (error) {
+    toast("Connection lost");
+  }
+}
+
+function deepSet(target, path, value) {
+  const keys = path.split(".");
+  const last = keys.pop();
+  for (const key of keys) target = target[key] ??= {};
+  target[last] = value;
+}
+const getPath = (obj, path) => path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+const decimals = step => (String(step).split(".")[1] || "").length;
+
+let pending = {}, flushTimer = null;
+function queueSim(path, value) {
+  deepSet(pending, path, value);
+  if (!flushTimer) flushTimer = setTimeout(() => {
+    const body = pending;
+    pending = {}; flushTimer = null;
+    post("/api/sim", body);
+  }, 30);
+}
+
+/* ---------- LEDs ---------- */
+let lastFrame = new Uint8Array(192);
+const dim = v => 255 * Math.pow(v / 255, 0.7);  // make very dim LEDs visible
+
+function drawLeds(canvas, frame) {
+  const dpr = window.devicePixelRatio || 1;
+  const size = canvas.clientWidth;
+  if (!size) return;
+  if (canvas.width !== Math.round(size * dpr)) canvas.width = canvas.height = Math.round(size * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#07090b";
+  ctx.beginPath(); ctx.roundRect(0, 0, size, size, size * 0.04); ctx.fill();
+  const cell = size / 8;
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const i = (y * 8 + x) * 3;
+      const [r, g, b] = [frame[i], frame[i + 1], frame[i + 2]];
+      ctx.beginPath();
+      ctx.arc((x + 0.5) * cell, (y + 0.5) * cell, cell * 0.36, 0, Math.PI * 2);
+      if (r + g + b > 0) {
+        const color = `rgb(${dim(r) | 0},${dim(g) | 0},${dim(b) | 0})`;
+        ctx.shadowColor = color; ctx.shadowBlur = cell * 0.45; ctx.fillStyle = color;
+      } else {
+        ctx.shadowBlur = 0; ctx.fillStyle = "#15191d";
+      }
+      ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+const redraw = () => { drawLeds($("#led"), lastFrame); drawLeds($("#mini"), lastFrame); };
+window.addEventListener("resize", redraw);
+
+/* ---------- slider controls ---------- */
+const controls = {};
+function buildControl(mount, def) {
+  const dec = decimals(def.step);
+  const range = h("input", { type: "range", min: def.min, max: def.max, step: def.step, "aria-label": def.label });
+  const num = h("input", { type: "number", min: def.min, max: def.max, step: def.step, "aria-label": def.label + " value" });
+  const ctl = { def, range, num, busyUntil: 0 };
+  const commit = raw => {
+    let value = Number(raw);
+    if (Number.isNaN(value)) return;
+    value = Math.min(def.max, Math.max(def.min, value));
+    ctl.busyUntil = performance.now() + 600;
+    range.value = value;
+    if (document.activeElement !== num) num.value = value.toFixed(dec);
+    queueSim(def.path, value);
+    if (def.path.startsWith("orientation.")) boardFromControls();
+  };
+  range.addEventListener("input", () => commit(range.value));
+  num.addEventListener("change", () => commit(num.value));
+  mount.append(h("div", { class: "row" }, h("label", { title: def.label }, def.label), range, num, h("span", { class: "unit" }, def.unit || "")));
+  controls[def.path] = ctl;
+}
+
+const axes = (prefix, unit, min, max, step, linked) =>
+  ["x", "y", "z"].map(a => ({ path: `${prefix}.${a}`, label: a.toUpperCase(), unit, min, max, step, linked }));
+
+[
+  ["#env", [
+    { path: "temperature", label: "Temperature", unit: "°C", min: -20, max: 80, step: 0.1 },
+    { path: "humidity", label: "Humidity", unit: "%", min: 0, max: 100, step: 0.1 },
+    { path: "pressure", label: "Pressure", unit: "mbar", min: 900, max: 1100, step: 0.1 },
+    { path: "noise", label: "Sensor noise", unit: "×", min: 0, max: 5, step: 0.1 },
+  ]],
+  ["#orient", [
+    { path: "orientation.pitch", label: "Pitch", unit: "°", min: -180, max: 180, step: 0.5, wrap: true },
+    { path: "orientation.roll", label: "Roll", unit: "°", min: -180, max: 180, step: 0.5, wrap: true },
+    { path: "orientation.yaw", label: "Yaw", unit: "°", min: 0, max: 360, step: 0.5 },
+  ]],
+  ["#accel", axes("accelerometer_raw", "g", -2, 2, 0.01, true)],
+  ["#gyro", axes("gyroscope_raw", "rad/s", -10, 10, 0.01, false)],
+  ["#compass", axes("compass_raw", "µT", -100, 100, 0.1, true)],
+].forEach(([selector, defs]) => defs.forEach(def => buildControl($(selector), def)));
+
+$("#link").addEventListener("change", event => post("/api/sim", { link_motion_sensors: event.target.checked }));
+
+function syncControls(sim) {
+  const linkBox = $("#link");
+  if (document.activeElement !== linkBox) linkBox.checked = sim.link_motion_sensors;
+  for (const ctl of Object.values(controls)) {
+    let value = getPath(sim, ctl.def.path);
+    if (value === undefined) continue;
+    if (ctl.def.wrap && value > 180) value -= 360;
+    ctl.range.disabled = ctl.num.disabled = Boolean(ctl.def.linked && sim.link_motion_sensors);
+    if (performance.now() < ctl.busyUntil || document.activeElement === ctl.num) continue;
+    ctl.range.value = value;
+    ctl.num.value = Number(value).toFixed(decimals(ctl.def.step));
+  }
+}
+
+/* ---------- 3D board ---------- */
+function setBoard(pitch, roll, yaw) {
+  const style = $("#board").style;
+  style.setProperty("--pitch", pitch);
+  style.setProperty("--roll", roll);
+  style.setProperty("--yaw", yaw);
+}
+const boardFromControls = () => setBoard(
+  +controls["orientation.pitch"].range.value, +controls["orientation.roll"].range.value, +controls["orientation.yaw"].range.value);
+
+for (const [label, p, r, y] of [["Flat", 0, 0, 0], ["Nose down 45°", 45, 0, 0], ["Tilt right 45°", 0, 45, 0], ["Upside down", 0, 180, 0], ["Face east", 0, 0, 90]]) {
+  $("#presets").append(h("button", { onclick: () => {
+    queueSim("orientation.pitch", p); queueSim("orientation.roll", r); queueSim("orientation.yaw", y);
+    for (const [path, v] of [["pitch", p], ["roll", r], ["yaw", y]]) {
+      const ctl = controls["orientation." + path]; ctl.range.value = v; ctl.num.value = v.toFixed(1); ctl.busyUntil = performance.now() + 600;
+    }
+    setBoard(p, r, y);
+  } }, label));
+}
+
+/* ---------- light ---------- */
+const hexToRgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+const rgbToHex = rgb => "#" + rgb.map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
+const lightFromSlider = s => 1024 * (s / 100) ** 2;  // finer control at low light
+let lightBusy = 0;
+function sendLight() {
+  lightBusy = performance.now() + 600;
+  const level = lightFromSlider(+$("#lint").value);
+  const [r, g, b] = hexToRgb($("#lcolour").value);
+  const k = level / 255;
+  $("#lval").textContent = Math.round(level);
+  post("/api/light", { red: r * k, green: g * k, blue: b * k, clear: (r + g + b) * k });
+}
+$("#lcolour").addEventListener("input", sendLight);
+$("#lint").addEventListener("input", sendLight);
+function syncLight(light) {
+  $("#lmeta").textContent = `simulated light  R ${light.red}  G ${light.green}  B ${light.blue}  clear ${light.clear}`;
+  if (performance.now() < lightBusy) return;
+  const level = Math.max(light.red, light.green, light.blue);
+  $("#lval").textContent = Math.round(level);
+  $("#lint").value = Math.min(100, 100 * Math.sqrt(level / 1024));
+  if (level > 0) $("#lcolour").value = rgbToHex([light.red, light.green, light.blue].map(v => 255 * v / level));
+}
+
+/* ---------- joystick ---------- */
+const ARROWS = { up: "▲", left: "◀", middle: "●", right: "▶", down: "▼" };
+const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "middle", " ": "middle" };
+const holds = {};
+const stick = (direction, action) => post("/api/stick", { direction, action });
+function press(direction) {
+  if (holds[direction]) return;
+  const hold = holds[direction] = {};
+  hold.delay = setTimeout(() => { hold.repeat = setInterval(() => stick(direction, "held"), 120); }, 500);
+  stick(direction, "pressed");
+}
+function release(direction) {
+  const hold = holds[direction];
+  if (!hold) return;
+  clearTimeout(hold.delay); clearInterval(hold.repeat);
+  delete holds[direction];
+  stick(direction, "released");
+}
+const padCells = [null, "up", null, "left", "middle", "right", null, "down", null];
+for (const direction of padCells) {
+  if (!direction) { $("#pad").append(h("span")); continue; }
+  const button = h("button", { "data-dir": direction, "aria-label": "joystick " + direction }, ARROWS[direction]);
+  button.addEventListener("pointerdown", e => { button.setPointerCapture(e.pointerId); press(direction); });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(type, () => release(direction));
+  button.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") e.preventDefault(); });
+  $("#pad").append(button);
+}
+window.addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const direction = KEYS[e.key];
+  if (!direction) return;
+  e.preventDefault();
+  if (!e.repeat) press(direction);
+});
+window.addEventListener("keyup", e => { const d = KEYS[e.key]; if (d) release(d); });
+window.addEventListener("blur", () => Object.keys(holds).forEach(release));
+
+function onStick(event) {
+  const button = $(`#pad [data-dir="${event.direction}"]`);
+  if (button) button.classList.toggle("active", event.action !== "released");
+  const time = new Date(event.timestamp * 1000);
+  const stamp = time.toTimeString().slice(0, 8) + "." + String(time.getMilliseconds()).padStart(3, "0");
+  const item = h("li", {}, `${stamp}  `, h("b", {}, event.direction), `  ${event.action}`);
+  $("#log").prepend(item);
+  while ($("#log").children.length > 40) $("#log").lastChild.remove();
+}
+
+/* ---------- read-outs ---------- */
+const f = (v, d = 2) => Number(v).toFixed(d);
+const vec = o => Object.entries(o).map(([k, v]) => `${k} ${f(v)}`).join("   ");
+const READOUTS = [
+  ["hat.get_temperature()", r => `${f(r.temperature)} °C`],
+  ["hat.get_humidity()", r => `${f(r.humidity)} %`],
+  ["hat.get_pressure()", r => `${f(r.pressure)} mbar`],
+  ["hat.get_orientation()", r => vec(r.orientation)],
+  ["hat.get_accelerometer_raw()", r => vec(r.accelerometer_raw)],
+  ["hat.get_gyroscope_raw()", r => vec(r.gyroscope_raw)],
+  ["hat.get_compass_raw()", r => vec(r.compass_raw)],
+  ["hat.get_compass()", r => `${f(r.compass, 1)}°`],
+  ["hat.colour.colour", r => `(${r.colour.colour.join(", ")})`],
+  ["hat.colour.colour_raw", r => `(${r.colour.colour_raw.join(", ")})`],
+  ["colour gain / cycles", r => `${r.colour.gain}× / ${r.colour.integration_cycles}  (${f(r.colour.integration_time, 1)} ms)`],
+];
+const readCells = READOUTS.map(([name]) => {
+  const value = h("td");
+  $("#readouts").append(h("tr", {}, h("td", {}, name), value));
+  return value;
+});
+
+/* ---------- state / frame / events ---------- */
+function applyState(state) {
+  syncControls(state.sim);
+  syncLight(state.light);
+  READOUTS.forEach(([, render], i) => { readCells[i].textContent = render(state.readouts); });
+  const [r, g, b] = state.readouts.colour.colour;
+  readCells[8].prepend(h("span", { class: "swatch", style: `background: rgb(${r},${g},${b})` }));
+  $("#ledmeta").textContent = `rotation ${state.hat.rotation}°` + (state.hat.low_light ? " · low light" : "");
+  $("#imu").replaceChildren(...[["compass", "compass"], ["gyro", "gyro"], ["accel", "accel"]].map(
+    ([key, label]) => h("span", { class: "chip" + (state.hat.imu[key] ? " on" : "") }, label)));
+  if (performance.now() >= Math.max(...["pitch", "roll", "yaw"].map(a => controls["orientation." + a].busyUntil))) {
+    const o = state.sim.orientation;
+    setBoard(o.pitch > 180 ? o.pitch - 360 : o.pitch, o.roll > 180 ? o.roll - 360 : o.roll, o.yaw);
+  }
+}
+
+const source = new EventSource("/events");
+source.onopen = () => { $("#conn").textContent = "live"; $("#conn").classList.add("live"); };
+source.onerror = () => { $("#conn").textContent = "reconnecting…"; $("#conn").classList.remove("live"); };
+source.addEventListener("frame", e => {
+  lastFrame = Uint8Array.from(atob(e.data), c => c.charCodeAt(0));
+  redraw();
+});
+source.addEventListener("state", e => applyState(JSON.parse(e.data)));
+source.addEventListener("stick", e => onStick(JSON.parse(e.data)));
+
+$("#reset").addEventListener("click", () => post("/api/reset", {}));
+redraw();
+</script>
+</body>
+</html>
